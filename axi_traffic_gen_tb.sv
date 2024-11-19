@@ -20,12 +20,12 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 import axi_vip_pkg::*;
-import design_1_axi_vip_0_0_pkg::*;
+import design_1_axi_vip_0_1_pkg::*;
 
 module axi_traffic_gen_tb();
 //
 xil_axi_uint slv_mem_agent_verbosity = 0;
-design_1_axi_vip_0_0_slv_mem_t slv_mem_agent;
+design_1_axi_vip_0_1_slv_mem_t slv_mem_agent;
 
 //
 reg aclk;
@@ -45,10 +45,10 @@ reg  [`ADDR_W-1:0] u_addr [0:9] =
     'h10000C00, //0
     'h10000C40, //0
     'h10000C80, //0
-    'h10000CC0, //15
-    'h100010C0, //15
-    'h10001500, //0
-    'h10001540  //0
+    'h20000CC0, //15
+    'h300010C0, //15
+    'h30001500, //0
+    'h30001540  //0
 };
 
 reg  [3:0]  u_b_len [0:9] =
@@ -82,8 +82,11 @@ bit  [`DATA_W-1:0] u_data_in [0:54] =
 bit  [`DATA_W-1:0] u_data_out [0:54];
 
 bit  [`DATA_W-1:0] cmp_data_diff;
+bit  [`DATA_W-1:0] strb_val;
+bit  [`DATA_W-1:0] strb_data_in, strb_data_out;
 
-reg   [7:0] u_pix_len [0:9] =
+
+reg   [7:0] w_strb [0:9] =
 {
 'b11111111,
 'b11111111,
@@ -100,7 +103,8 @@ reg   [7:0] u_pix_len [0:9] =
 reg         user_start;
 
 wire        user_free;
-wire        user_stall_data;
+wire        user_stall_w_data;
+wire        user_stall_r_data;
 wire [1:0]  user_status;
 //
 
@@ -163,117 +167,70 @@ begin
     #10us;
 
 //AXI WRITES    
-    @(posedge aclk);
     user_start      = 1'd0;
-    running_index   = 'd0;
-
+    running_index   = 1'd0;
+    
+    //#5ms;
+    @(posedge aclk);
+    
     for(int i = 0; i < 10; i++)
     begin
         wait(user_free);
         @(posedge aclk);
-    
+        
         user_addr_in        = u_addr[i];
         user_burst_len_in   = u_b_len[i];
-        user_pixels_1_2     = u_pix_len[0]; //u_pix_len[i];
+        user_pixels_1_2     = w_strb[0]; // leaving strobe as all 64 bits for now, need to properly calculate final results for this... but the AXI works for it
         user_data_in        = u_data_in[running_index];
-        @(posedge aclk);
         user_start          = 1'd1;
-        running_index++;
         
         @(posedge aclk);
-        wait(~user_free);
         
-        if(u_b_len[i] > 'd0)
-        begin
-            for(int b = 0; b < u_b_len[i]; b++)
-            begin
-           
-                //running_index++;
-                @(negedge user_stall_data);
-                @(posedge aclk);
-                
-                //@(posedge aclk_out);
-                user_data_in = u_data_in[running_index];
-                running_index++;
-            end
-        end
         user_start          = 1'd0;
+        
+        for(int b = 0; b < u_b_len[i]+1; b++)
+        begin
+            running_index++;
+            @(negedge user_stall_w_data);
+            //@(posedge aclk_out);
+            user_data_in = u_data_in[running_index];
+        end
+
     end
+    
+    #5us; 
     
 //AXI READS
     @(posedge aclk);
     user_start      = 1'd0;
     running_index   = 'd0;
     user_w_r = 'h1;
+    @(posedge aclk);
 
     for(int i = 0; i < 10; i++)
     begin
         wait(user_free);
-        @(posedge aclk);
     
         user_addr_in        = u_addr[i];
         user_burst_len_in   = u_b_len[i];
+        @(posedge aclk);
         user_start          = 1'd1;
-     
-        @(posedge user_stall_data);
-        //wait(user_data_out_en == 1);
-        //user_start          = 1'd0;
-        //@(posedge aclk);
-        //u_data_out[running_index] <= user_data_out;
         //running_index++;
+        //wait(~user_free);
+        @(posedge aclk);
+        user_start          = 1'd0;
+        
+        @(negedge user_stall_r_data);
 
         for(int b = 0; b < u_b_len[i] + 1; b++)
         begin
-       
-            //running_index++;
-            
-            //wait(user_stall_data == 0);
-            wait(user_data_out_en == 1);
             @(posedge aclk);
+            u_data_out[running_index] = user_data_out;
+            running_index++;
             //@(posedge aclk);
-            
-            //@(posedge aclk_out);
-            u_data_out[running_index] = user_data_out;
-            running_index++;
         end
-
-        user_start          = 1'd0;
     end
 
-////////////////////////////////////////////////////////////////////////    
-/*
-    wait(user_free);
-    #10us;
-   
-    running_index   = 'd0;
-    user_w_r = 'h1;
-    
-    for(int i = 0; i < 10; i++)
-    begin
-        wait(user_free);
-        @(posedge aclk);
-        
-        user_addr_in        = u_addr[i];
-        user_burst_len_in   = u_b_len[i];
-        //user_pixels_1_2     = u_pix_len[i];
-        //user_data_in        = u_data_in[running_index];
-        user_start          = 1'd1;
-        
-        @(posedge aclk);
-        
-        for(int b = 0; b < u_b_len[i]+1; b++)
-        begin
-            //@(posedge user_data_out_en);
-            if(~user_data_out_en) wait(user_data_out_en);
-            @(posedge aclk);
-            if(user_stall_data) wait(~user_stall_data);
-            u_data_out[running_index] = user_data_out;
-            running_index++;
-        end
-        
-        user_start          = 1'd0;
-    end
-*/
 //////////////////////////////////////////////////////////////////////////////////    
     #10us;
     running_index   = 'd0;
@@ -289,16 +246,19 @@ begin
         begin
         
             current_addr = current_addr + ((`DATA_W)*i);
-            cmp_data_diff = u_data_in[running_index] ^ u_data_out[running_index];
+            strb_val = ;
+            strb_data_in = u_data_in[running_index] & w_strb[cmp_it];
+            strb_data_out = u_data_out[running_index] & w_strb[cmp_it];
+            cmp_data_diff = () ^ ();
         
             if(|cmp_data_diff)
             begin
-                $display("ADDRESS: %X, BURST LENGTH: %d, DATA WRITTEN: %X, DATA READ: %X, NOT EQUAL", current_addr, u_b_len[cmp_it]+1, u_data_in[running_index], u_data_out[running_index]);
+                $display("ADDRESS: 0x%X, BURST LENGTH: %d, DATA WRITTEN: 0x%X -> (w/ strb 0b%b): 0x%X, DATA READ: 0x%X, NOT EQUAL", current_addr, u_b_len[cmp_it]+1, u_data_in[running_index], w_strb[cmp_it], (u_data_in[running_index] & w_strb[cmp_it]), (u_data_out[running_index]& w_strb[cmp_it]));
             end
             
             else
             begin
-                $display("ADDRESS: %X, BURST LENGTH: %d, DATA WRITTEN: %X, DATA READ: %X, EQUAL", current_addr, u_b_len[cmp_it]+1, u_data_in[running_index], u_data_out[running_index]);
+                $display("ADDRESS: 0x%X, BURST LENGTH: %d, DATA WRITTEN: 0x%X -> (w/ strb 0b%b): 0x%X, DATA READ: 0x%X, EQUAL", current_addr, u_b_len[cmp_it]+1, u_data_in[running_index], w_strb[cmp_it], (u_data_in[running_index] & w_strb[cmp_it]), (u_data_out[running_index]& w_strb[cmp_it]));
             end
             
             running_index++;
@@ -318,10 +278,11 @@ design_1_wrapper d1w0(
     .user_data_out_en_0(user_data_out_en),
     .user_data_strb_0(user_pixels_1_2),
     .user_free_0(user_free),
-    .user_stall_data_0(user_stall_data),
     .user_start_0(user_start),
     .user_status_0(user_status),
-    .user_w_r_0(user_w_r)
+    .user_w_r_0(user_w_r),
+    .user_stall_r_data_0(user_stall_r_data),
+    .user_stall_w_data_0(user_stall_w_data)
     );
 
 endmodule
