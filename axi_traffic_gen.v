@@ -95,7 +95,8 @@ module axi_traffic_gen #(
   input  wire [DATA_W-1:0]             user_data_in,
   input  wire [ADDR_W-1:0]             user_addr_in,
   output reg                           user_free,
-  output reg                           user_stall_data, // can this be caused by all of these: m_axi_awready, m_axi_awvalid, m_axi_wvalid, m_axi_wready
+  output reg                           user_stall_w_data, // can this be caused by all of these: m_axi_awready, m_axi_awvalid, m_axi_wvalid, m_axi_wready
+  output reg                           user_stall_r_data,
   output reg  [1:0]                    user_status,
   output reg  [DATA_W-1:0]             user_data_out,
   output reg                           user_data_out_en
@@ -222,9 +223,9 @@ module axi_traffic_gen #(
 // AXI READ ---------------------------------------------------    
     always @ (*)
     begin
-        m_axi_araddr      <= ((axi_cs==IDLE) & (user_w_r)) ? user_addr_in : 0;
-        m_axi_arlen       <= ((axi_cs==IDLE) & (user_w_r)) ? user_burst_len_in : 0;
-        m_axi_arvalid     <= ((axi_cs==IDLE) & (user_w_r)) ? 1 : 0;
+        m_axi_araddr      <= ((axi_cs==IDLE) && (axi_ns==READ_RESPONSE)) ? user_addr_in : 0;
+        m_axi_arlen       <= ((axi_cs==IDLE) && (axi_ns==READ_RESPONSE)) ? user_burst_len_in : 0;
+        m_axi_arvalid     <= ((axi_cs==IDLE) && (axi_ns==READ_RESPONSE)) ? 1 : 0;
         m_axi_rready      <= (axi_cs==READ_RESPONSE) ? 1 : 0;
         user_data_out     <= #1 (axi_cs==READ_RESPONSE) ? m_axi_rdata : 0;
         user_data_out_en  <= #1 (axi_cs==READ_RESPONSE) ? m_axi_rvalid : 0;
@@ -252,20 +253,8 @@ module axi_traffic_gen #(
 
     always @ (*)
     begin
-        //user_stall_data = (~m_axi_wready) ? 1'b0 : 1'b1;
-        //user_stall_data = (((axi_cs == WRITE) & ~m_axi_wready) | ((axi_cs==READ_RESPONSE) & ~m_axi_rvalid)) ? 1'b0 : 1'b1;
-        #1;   
-        if((axi_cs == WRITE) & ~m_axi_wready)
-        begin
-            user_stall_data = 1'b1;
-        end
-        
-        else if((axi_cs == READ_RESPONSE) & ~m_axi_rvalid)
-        begin
-            user_stall_data = 1'b1;
-        end
-        
-        else user_stall_data = 1'b0;
+        user_stall_w_data = (~m_axi_wready) ? 1'b0 : 1'b1;
+        user_stall_r_data = (~m_axi_rvalid) ? 1'b1 : 1'b0;
         
         user_free       = (axi_ns == IDLE) ? 1'b1 : 1'b0;
     end
