@@ -102,12 +102,13 @@ module axi_traffic_gen #(
 );
    
 // AXI FSM ---------------------------------------------------
-    localparam IDLE           = 2'b00;
-    localparam WRITE          = 2'b01;
-    localparam WRITE_RESPONSE = 2'b10;
-    localparam READ_RESPONSE  = 2'b11;
+    localparam IDLE             = 3'b000;
+    localparam WRITE            = 3'b001;
+    localparam WRITE_RESPONSE   = 3'b010;
+    localparam READ_RESPONSE    = 3'b011;
+    localparam DEACTIVATE_START = 3'b100;
        
-    reg [1:0] axi_cs, axi_ns;
+    reg [2:0] axi_cs, axi_ns;
     reg [7:0] w_data_counter;
    
     always @ (posedge aclk or negedge aresetn)
@@ -159,21 +160,32 @@ module axi_traffic_gen #(
        
         WRITE_RESPONSE:
         begin
-            if(m_axi_bvalid) axi_ns = IDLE;
+            if(m_axi_bvalid)
+            begin
+                if(user_start) axi_ns = DEACTIVATE_START;
+                else axi_ns = IDLE;
+            end
             else axi_ns = WRITE_RESPONSE;
         end
 
         READ_RESPONSE:
         begin
-            if(m_axi_rlast && m_axi_rvalid)
+            if(m_axi_rlast & m_axi_rvalid)
             begin
-                axi_ns = IDLE;
+                if(user_start) axi_ns = DEACTIVATE_START;
+                else axi_ns = IDLE;
             end
            
             else
             begin
                 axi_ns = READ_RESPONSE;
             end
+        end
+        
+        DEACTIVATE_START:
+        begin
+            if(user_start) axi_ns = DEACTIVATE_START;
+            else axi_ns = IDLE;
         end
        
         default: axi_ns = IDLE;
@@ -214,8 +226,8 @@ module axi_traffic_gen #(
         m_axi_arlen       <= ((axi_cs==IDLE) & (user_w_r)) ? user_burst_len_in : 0;
         m_axi_arvalid     <= ((axi_cs==IDLE) & (user_w_r)) ? 1 : 0;
         m_axi_rready      <= (axi_cs==READ_RESPONSE) ? 1 : 0;
-        user_data_out     <= (axi_cs==READ_RESPONSE) ? m_axi_rdata : 0;
-        user_data_out_en  <= (axi_cs==READ_RESPONSE) ? m_axi_rvalid : 0;
+        user_data_out     <= #1 (axi_cs==READ_RESPONSE) ? m_axi_rdata : 0;
+        user_data_out_en  <= #1 (axi_cs==READ_RESPONSE) ? m_axi_rvalid : 0;
     end
 
 // STATUS   ---------------------------------------------------
@@ -242,7 +254,7 @@ module axi_traffic_gen #(
     begin
         //user_stall_data = (~m_axi_wready) ? 1'b0 : 1'b1;
         //user_stall_data = (((axi_cs == WRITE) & ~m_axi_wready) | ((axi_cs==READ_RESPONSE) & ~m_axi_rvalid)) ? 1'b0 : 1'b1;
-           
+        #1;   
         if((axi_cs == WRITE) & ~m_axi_wready)
         begin
             user_stall_data = 1'b1;
