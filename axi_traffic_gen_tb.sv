@@ -19,6 +19,11 @@
 // 
 //////////////////////////////////////////////////////////////////////////////////
 
+//
+//
+//
+//
+
 import axi_vip_pkg::*;
 import design_1_axi_vip_0_1_pkg::*;
 
@@ -34,8 +39,10 @@ wire aresetn_out;
 //
 // singlex2, 16, singlex3, 16, 16, singlex2
 
+`define BYTE_SIZE 8
 `define ADDR_W 32
 `define DATA_W 64
+`define STRB_SIZE (`DATA_W/`BYTE_SIZE)
 
 reg  [`ADDR_W-1:0] u_addr [0:9] = 
 {
@@ -74,9 +81,9 @@ bit  [`DATA_W-1:0] u_data_in [0:54] =
 'h08060402,
 'h07050301,
 'h1000000A,'h200000BA,'h30000CBA,'h4000DCBA,'h500EDCBA,'h60FEDCBA,'h7AFEDCBA,'h8AFEDCBA,'h9BAFEDCB,'hA0BAFEDC,'hB00BAFED,'hC000BAFE,'hD0000BAF,'hE00000BA,'hF000000B,'h10000000,
-'h00000000,'h11111111,'h22222222,'h33333333,'h44444444,'h55555555,'h66666666,'h77777777,'h88888888,'h99999999,'hAAAAAAAA,'hBBBBBBBB,'hCCCCCCCC,'hDDDDDDDD,'hEEEEEEEE,'hFFFFFFFF,
-'hBADCAFEE,
-'hDEADBEEF
+'h0000000011111111,'h1111111122222222,'h2222222233333333,'h3333333344444444,'h4444444455555555,'h5555555566666666,'h6666666677777777,'h7777777788888888,'h8888888899999999,'h99999999AAAAAAAA,'hAAAAAAAABBBBBBBB,'hBBBBBBBBCCCCCCCC,'hCCCCCCCCDDDDDDDD,'hDDDDDDDDEEEEEEEE,'hEEEEEEEEFFFFFFFF,'hFFFFFFFF00000000,
+'hBADCAFEEBADCAFEE,
+'hDEADBEEFDEADBEEF
 };
 
 bit  [`DATA_W-1:0] u_data_out [0:54];
@@ -97,7 +104,7 @@ reg   [7:0] w_strb [0:9] =
 'b00001111,
 'b11110000,
 'b00000001,
-'b11100000
+'b10101010
 };
 
 reg         user_start;
@@ -134,7 +141,7 @@ begin
     slv_mem_agent.set_verbosity(slv_mem_agent_verbosity);
     slv_mem_agent.start_slave();
     //slv_mem_agent.mem_model.pre_load_mem("compile.sh", 0);
-    slv_mem_agent.mem_model.pre_load_mem("vip_mem_out.mem", 0);
+    //slv_mem_agent.mem_model.pre_load_mem("vip_mem_out.mem", 0);
     //slv_mem_agent.mem_model.set_mem_depth(1024);
 
     axi_ready = 1;
@@ -180,7 +187,7 @@ begin
         
         user_addr_in        = u_addr[i];
         user_burst_len_in   = u_b_len[i];
-        user_pixels_1_2     = w_strb[0]; // leaving strobe as all 64 bits for now, need to properly calculate final results for this... but the AXI works for it
+        user_pixels_1_2     = w_strb[i];
         user_data_in        = u_data_in[running_index];
         user_start          = 1'd1;
         
@@ -241,24 +248,29 @@ begin
     begin
     
         current_addr = u_addr[cmp_it];
+        strb_val = 'd0;
+        
+        for(int y = `STRB_SIZE; y >= 0; y--)
+        begin
+            strb_val = (strb_val << 8) | ((w_strb[cmp_it][y]) ? 8'hFF : 8'h0);
+        end
     
         for(int i = 0; i < u_b_len[cmp_it]+1; i++)
         begin
         
             current_addr = current_addr + ((`DATA_W)*i);
-            strb_val = ;
-            strb_data_in = u_data_in[running_index] & w_strb[cmp_it];
-            strb_data_out = u_data_out[running_index] & w_strb[cmp_it];
-            cmp_data_diff = () ^ ();
+            strb_data_in = u_data_in[running_index] & strb_val;
+            strb_data_out = u_data_out[running_index] & strb_val;
+            cmp_data_diff = (strb_data_in) ^ (strb_data_out);
         
             if(|cmp_data_diff)
             begin
-                $display("ADDRESS: 0x%X, BURST LENGTH: %d, DATA WRITTEN: 0x%X -> (w/ strb 0b%b): 0x%X, DATA READ: 0x%X, NOT EQUAL", current_addr, u_b_len[cmp_it]+1, u_data_in[running_index], w_strb[cmp_it], (u_data_in[running_index] & w_strb[cmp_it]), (u_data_out[running_index]& w_strb[cmp_it]));
+                $display("ADDRESS: 0x%X, BURST LENGTH: %d, DATA WRITTEN: 0x%X -> (w/ strb 0b%b) DATA WRITTEN w/ STROBE: 0x%X, DATA READ: 0x%X, NOT EQUAL", current_addr, u_b_len[cmp_it]+1, u_data_in[running_index], w_strb[cmp_it], strb_data_in, strb_data_out);
             end
             
             else
             begin
-                $display("ADDRESS: 0x%X, BURST LENGTH: %d, DATA WRITTEN: 0x%X -> (w/ strb 0b%b): 0x%X, DATA READ: 0x%X, EQUAL", current_addr, u_b_len[cmp_it]+1, u_data_in[running_index], w_strb[cmp_it], (u_data_in[running_index] & w_strb[cmp_it]), (u_data_out[running_index]& w_strb[cmp_it]));
+                $display("ADDRESS: 0x%X, BURST LENGTH: %d, DATA WRITTEN: 0x%X -> (w/ strb 0b%b) DATA WRITTEN w/ STROBE: 0x%X, DATA READ: 0x%X, EQUAL", current_addr, u_b_len[cmp_it]+1, u_data_in[running_index], w_strb[cmp_it], strb_data_in, strb_data_out);
             end
             
             running_index++;
